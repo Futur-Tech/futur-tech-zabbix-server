@@ -50,14 +50,14 @@ cmd ZBX_WIDGET_ROWS 20 200
 cmd ZBX_MAX_TABLE_COLUMNS 50 500 
 cmd ZBX_MAX_IMAGE_SIZE "ZBX_MEBIBYTE" "ZBX_MEBIBYTE * 8" 
 
-# echo
-# echo "------------------------------------------"
-# echo "  RESTART ZABBIX LATER"
-# echo "------------------------------------------"
-# echo
+echo
+echo "------------------------------------------"
+echo "  RESTART ZABBIX LATER"
+echo "------------------------------------------"
+echo
 
-# echo "service zabbix-agent restart" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
-# $S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
+echo "service zabbix-agent restart" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
+$S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
 
 $S_LOG -d "$S_NAME" "End $S_NAME"
 
