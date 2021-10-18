@@ -56,12 +56,37 @@ Logging script
 
 - the $LOG_FILE can also contains several path separated with space
 
+## ft_util_pkg
+
+This script for 2 purposes:
+
+1. check if a packet is installed
+1. install packet needed if not installed
+
+### Exemples
+    ft-util/ft_util_pkg "pkg1"
+    # (Return 0 if pkg1 is installed)
+
+    ft-util/ft_util_pkg -c
+    # Run apt update
+
+    ft-util/ft_util_pkg -i "pkg1" "pkg2" "pkg3" "pkg4"
+    # Install "pkg1" "pkg2" "pkg3" "pkg4".
+    # Return number of packet not installed.
+
+    ft-util/ft_util_pkg -c -i "pkg1" "pkg2" "pkg3" "pkg4"
+    # Same than the previous exemple but with apt update before.
+
+> Script dependency:
+> - ft_util_log
+
+
 ## ft_util_sshauth
 
 Will compile the authorized_keys files from files in authorized_keys.d/
 If authorized_keys.d/ doesnt exist, the script will create it and exit
 
-    ft_util_sshauth "<user>" "<usergroup>"
+    ft-util/ft_util_sshauth "<user>" "<usergroup>"
 
 Note: if usergroup=user then you can omit it.
 
@@ -74,7 +99,7 @@ Note: if usergroup=user then you can omit it.
 
 Will generate ssh key for user and apply proper permission to .ssh folder.
 
-    ft_util_sshkey "user" "usergroup"
+    ft-util/ft_util_sshkey "user" "usergroup"
 
 Note: if usergroup=user then you can omit it.
 
