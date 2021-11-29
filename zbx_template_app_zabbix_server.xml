@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <zabbix_export>
     <version>5.0</version>
-    <date>2021-10-18T16:02:15Z</date>
+    <date>2021-11-29T16:54:13Z</date>
     <groups>
         <group>
             <name>Templates/Futur-Tech/Applications</name>
@@ -778,7 +778,9 @@
                             <opdata>Version: {ITEM.LASTVALUE}</opdata>
                             <url>https://github.com/Futur-Tech/futur-tech-zabbix-server</url>
                             <priority>WARNING</priority>
-                            <description>Since Zabbix Server has been updated, your tweak in the files have certainly been removed. Run the custom script from Zabbix Dashboard or do the tweaks manually.</description>
+                            <description>Since Zabbix Server has been updated, your tweak in the files have certainly been removed. Run the custom script from Zabbix Dashboard or do the tweaks manually.&#13;
+&#13;
+This trigger need to be closed manually.</description>
                             <manual_close>YES</manual_close>
                         </trigger>
                     </triggers>
