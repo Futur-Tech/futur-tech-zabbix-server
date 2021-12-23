@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <zabbix_export>
     <version>5.0</version>
-    <date>2021-11-29T16:54:13Z</date>
+    <date>2021-12-23T21:29:58Z</date>
     <groups>
         <group>
             <name>Templates/Futur-Tech/Applications</name>
@@ -23,6 +23,25 @@
                 </application>
             </applications>
             <items>
+                <item>
+                    <name>Version of Zabbix server installed</name>
+                    <type>ZABBIX_ACTIVE</type>
+                    <key>zabbix.server_version</key>
+                    <delay>30m</delay>
+                    <trends>0</trends>
+                    <value_type>CHAR</value_type>
+                    <applications>
+                        <application>
+                            <name>Zabbix server</name>
+                        </application>
+                    </applications>
+                    <preprocessing>
+                        <step>
+                            <type>DISCARD_UNCHANGED_HEARTBEAT</type>
+                            <params>1d</params>
+                        </step>
+                    </preprocessing>
+                </item>
                 <item>
                     <name>Zabbix LLD queue</name>
                     <type>INTERNAL</type>
@@ -756,7 +775,7 @@
                     <name>Version of Zabbix server running</name>
                     <type>INTERNAL</type>
                     <key>zabbix[version]</key>
-                    <delay>2h</delay>
+                    <delay>10m</delay>
                     <trends>0</trends>
                     <value_type>CHAR</value_type>
                     <applications>
@@ -1139,6 +1158,16 @@ This trigger need to be closed manually.</description>
             </screens>
         </template>
     </templates>
+    <triggers>
+        <trigger>
+            <expression>{Template Futur-Tech App Zabbix Server:zabbix[version].last()}&lt;&gt;{Template Futur-Tech App Zabbix Server:zabbix.server_version.last()}</expression>
+            <name>Zabbix Server need to be restarted</name>
+            <opdata>Version running: {ITEM.LASTVALUE1} Version installed: {ITEM.LASTVALUE2}</opdata>
+            <url>https://github.com/Futur-Tech/futur-tech-zabbix-server</url>
+            <priority>AVERAGE</priority>
+            <description>Running version of Zabbix Server is different than installed version.</description>
+        </trigger>
+    </triggers>
     <graphs>
         <graph>
             <name>Value cache effectiveness</name>
