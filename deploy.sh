@@ -4,35 +4,30 @@ source "$(dirname "$0")/ft-util/ft_util_inc_var"
 
 APP_NAME="futur-tech-zabbix-server"
 
-ZBX_CONF_AGENT_D="/etc/zabbix/zabbix_agentd.conf.d"
 BIN_DIR="/usr/local/bin/${APP_NAME}"
 SRC_DIR="/usr/local/src/${APP_NAME}"
 SUDOERS_ETC="/etc/sudoers.d/${APP_NAME}"
 
+# Checking which Zabbix Agent is detected and adjust include directory
+$(which zabbix_agent2 >/dev/null) && ZBX_CONF_AGENT_D="/etc/zabbix/zabbix_agent2.d"
+$(which zabbix_agentd >/dev/null) && ZBX_CONF_AGENT_D="/etc/zabbix/zabbix_agentd.conf.d"
+if [ ! -d "${ZBX_CONF_AGENT_D}" ] ; then $S_LOG -s crit -d $S_NAME "${ZBX_CONF_AGENT_D} Zabbix Include directory not found" ; exit 10 ; fi
+
 $S_LOG -d $S_NAME "Start $S_DIR_NAME/$S_NAME $*"
 
-echo
-echo "------------------------------------------"
-echo "  INSTALL NEEDED PACKAGES & FILES"
-echo "------------------------------------------"
-echo
+echo "
+  INSTALL NEEDED PACKAGES & FILES
+------------------------------------------"
 
-ZBX_CONF_AGENT_D="/etc/zabbix/zabbix_agentd.conf.d"
-
-if [ ! -d "${ZBX_CONF_AGENT_D}" ] ; then mkdir "${ZBX_CONF_AGENT_D}" ; $S_LOG -s $? -d $S_NAME "Creating ${ZBX_CONF_AGENT_D} returned EXIT_CODE=$?" ; fi
 if [ ! -d "${BIN_DIR}" ] ; then mkdir "${BIN_DIR}" ; $S_LOG -s $? -d $S_NAME "Creating ${BIN_DIR} returned EXIT_CODE=$?" ; fi
 
 $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/bin/" "${BIN_DIR}"
 $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.zabbix/${APP_NAME}.conf" "${ZBX_CONF_AGENT_D}/${APP_NAME}.conf"
 
-echo
-echo "------------------------------------------"
-echo "  SETUP SUDOERS FILE"
-echo "------------------------------------------"
-echo
+echo "
+  SETUP SUDOERS FILE
+------------------------------------------"
 
-$S_LOG -d $S_NAME -d "$SUDOERS_ETC" "==============================="
-$S_LOG -d $S_NAME -d "$SUDOERS_ETC" "==== SUDOERS CONFIGURATION ===="
 $S_LOG -d $S_NAME -d "$SUDOERS_ETC" "==============================="
 
 echo "Defaults:zabbix !requiretty" | sudo EDITOR='tee' visudo --file=$SUDOERS_ETC &>/dev/null
@@ -42,13 +37,10 @@ echo "zabbix ALL=(ALL) NOPASSWD:${BIN_DIR}/zabbix-server-version.sh" | sudo EDIT
 cat $SUDOERS_ETC | $S_LOG -d "$S_NAME" -d "$SUDOERS_ETC" -i 
 
 $S_LOG -d $S_NAME -d "$SUDOERS_ETC" "==============================="
-$S_LOG -d $S_NAME -d "$SUDOERS_ETC" "==============================="
 
-echo
-echo "------------------------------------------"
-echo "  APPLY TWEAKS"
-echo "------------------------------------------"
-echo
+echo "
+  APPLY TWEAKS
+------------------------------------------"
 
 
 cd /usr/share/zabbix/include/
@@ -67,13 +59,11 @@ cmd ZBX_WIDGET_ROWS 20 200
 cmd ZBX_MAX_TABLE_COLUMNS 50 500 
 cmd ZBX_MAX_IMAGE_SIZE "ZBX_MEBIBYTE" "ZBX_MEBIBYTE * 8" 
 
-echo
-echo "------------------------------------------"
-echo "  RESTART ZABBIX LATER"
-echo "------------------------------------------"
-echo
+echo "
+  RESTART ZABBIX LATER
+------------------------------------------"
 
-echo "service zabbix-agent restart" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
+echo "systemctl restart zabbix-agent*" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
 $S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
 
 $S_LOG -d "$S_NAME" "End $S_NAME"
