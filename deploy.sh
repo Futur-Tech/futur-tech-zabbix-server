@@ -44,10 +44,9 @@ echo "
 
 
 cd /usr/share/zabbix/include/
-
 cp defines.inc.php defines.inc.php.bak
 
-cmd() { 
+define_inc() { 
     echo "===== ${1} : ${2} >> ${3} ====="
     echo "BEFORE: $(grep ${1} defines.inc.php)"
     sed -i -e "s/define('${1}', ${2});/define('${1}', ${3});/" defines.inc.php
@@ -55,9 +54,17 @@ cmd() {
     echo
 }
 
-cmd ZBX_WIDGET_ROWS 20 200 
-cmd ZBX_MAX_TABLE_COLUMNS 50 500 
-cmd ZBX_MAX_IMAGE_SIZE "ZBX_MEBIBYTE" "ZBX_MEBIBYTE * 8" 
+define_inc ZBX_WIDGET_ROWS 20 200 
+define_inc ZBX_MAX_TABLE_COLUMNS 50 500 
+define_inc ZBX_MAX_IMAGE_SIZE "ZBX_MEBIBYTE" "ZBX_MEBIBYTE * 8" 
+define_inc SVG_GRAPH_MAX_NUMBER_OF_METRICS 50 500 
+diff defines.inc.php.bak defines.inc.php | $S_LOG -d $S_NAME -d "tweak" -d "defines.inc.php diff" -i
+
+# Remove 0 values from GUI Graph Hintbox
+cd /usr/share/zabbix/js/
+cp class.csvggraph.js class.csvggraph.js.bak
+sed -i -e 's/if (show_hint \&\& data.hintMaxRows > rows_added) {/if (show_hint \&\& data.hintMaxRows \> rows_added \&\& \!point.v.match(\/^0( \\w*)?$\/)) {/' class.csvggraph.js
+diff class.csvggraph.js.bak class.csvggraph.js | $S_LOG -d $S_NAME -d "tweak" -d "class.csvggraph.js diff" -i
 
 echo "
   RESTART ZABBIX LATER
