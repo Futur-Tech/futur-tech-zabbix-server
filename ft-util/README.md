@@ -31,15 +31,41 @@ Note: comments on the same lines of a variable set in a target conf will be kept
 > - ft_util_log
 > - ft_util_bak-cleaner
 
+## ft_util_docker
+
+Functions to help in the deployement of Docker containers.
+
+> Script dependency:
+> - ft_util_log
+
 ## ft_util_file-deploy
 
 File deployement... todo: readme
 
 Option **NO-BACKUP** can be specified to avoid creating a backup
+Option **NO-COMPARE** can be specified to avoid showing diff result
 
 > Script dependency:
 > - ft_util_log
 > - ft_util_bak-cleaner
+
+## ft_util_inc_func
+
+These functions provide various utility operations related to deploying Git repositories, running commands with logging and error handling, file backup, directory creation, and file difference checking.
+
+- `deploy_git`: Clones a Git repository and deploys it. If the repository is already cloned, it can be redeployed by passing the "deploy-again" argument.
+- `run_cmd_log`: Runs a command, logs its output, and checks the exit code. If the command fails, it exits with the corresponding exit code.
+- `run_cmd_nolog`: Runs a command without logging its output, but still checks the exit code. If the command fails, it exits with the corresponding exit code.
+- `run_cmd_log_noexit`: Runs a command, logs its output, and checks the exit code. If the command fails, it continues without exiting.
+- `run_cmd_nolog_noexit`: Runs a command without logging its output, but still checks the exit code. If the command fails, it continues without exiting.
+- `bak_if_exist`: Makes a backup copy of a file if it exists.
+- `mkdir_if_missing`: Creates a directory if it doesn't already exist.
+- `show_bak_diff`: Shows the difference between a file and its backup (if the backup exists).
+- `show_bak_diff_rm`: Shows the difference between a file and its backup (if the backup exists) and removes the backup file.
+- `is_bak_diff`: Checks if a file and its backup (if the backup exists) are different.
+
+> Script dependency:
+> - ft_util_log
 
 ## ft_util_inc_var
 
@@ -47,6 +73,14 @@ Basic vars used accross Futur-Tech scripts. Also declare log.
 
 > Script dependency:
 > - ft_util_log
+
+## ft_util_kerberos
+
+This function will generate a Kerberos ticket for a Domain Username from a keytab file located in the home directory.
+If this script is run as root on a Domain Controller, it can automatically also generate a keytab.
+The following variable will be exported:
+- ft_util_kerberos_sambatool, its value will contain the Kerberos argument needed for the installed version of samba-tool
+- KRB5CCNAME, its value is used to locate the default ticket cache (see "man klist")
 
 ## ft_util_log
 
