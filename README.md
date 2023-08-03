@@ -39,21 +39,6 @@ define('ZBX_WIDGET_ROWS', 200);
 
 ---
 
-**Problem:** Only 50 rows are shown on **Overview widget**. Showing message at the bottom: *Not all results are displayed. Please provide more specific search criteria.*
-
-**Solution:** On Zabbix Server, edit **/usr/share/zabbix/include/defines.inc.php**
-
-```php
-// Original
-define('ZBX_MAX_TABLE_COLUMNS', 50);
-
-// Replaced by
-define('ZBX_MAX_TABLE_COLUMNS', 500); 
-```
-> Source: https://www.zabbix.com/forum/zabbix-help/401358-data-overwiev-widget-doesn%C2%B4t-show-all-records 
-
----
-
 **Problem:** Default max upload size for pictures is 1MB. Showing error: *Image size must be less than 1 MB.*
 
 **Solution:** On Zabbix Server, edit **/usr/share/zabbix/include/defines.inc.php**
