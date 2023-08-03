@@ -1,0 +1,52 @@
+zabbix_export:
+  version: '6.0'
+  date: '2023-08-02T19:03:31Z'
+  groups:
+    - uuid: 7f27dc73981940769811e7fae4a26772
+      name: Templates/Futur-Tech/Applications
+  templates:
+    - uuid: 8105f4aae29b4e27b54ee35eb097ea93
+      template: 'Futur-Tech App Zabbix Server'
+      name: 'Futur-Tech App Zabbix Server'
+      description: 'https://github.com/Futur-Tech/futur-tech-zabbix-server'
+      templates:
+        - name: 'Zabbix server health'
+      groups:
+        - name: Templates/Futur-Tech/Applications
+      items:
+        - uuid: 8ec3b5d1e4ea4b31b756b91da988da20
+          name: 'Zabbix server: Version (installed)'
+          type: ZABBIX_ACTIVE
+          key: zabbix.server_version
+          delay: 30m
+          trends: '0'
+          value_type: CHAR
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - 1d
+          tags:
+            - tag: Application
+              value: 'Zabbix server'
+      tags:
+        - tag: Futur-Tech
+  triggers:
+    - uuid: d8ca8eacdabc46499921f03d5682feb5
+      expression: '(last(/Futur-Tech App Zabbix Server/zabbix[version],#1)<>last(/Futur-Tech App Zabbix Server/zabbix[version],#2))=1'
+      recovery_mode: NONE
+      name: 'Zabbix Server has been updated'
+      opdata: 'Version: {ITEM.LASTVALUE}'
+      url: 'https://github.com/Futur-Tech/futur-tech-zabbix-server'
+      priority: WARNING
+      description: |
+        Since Zabbix Server has been updated, your tweak in the files have certainly been removed. Run the custom script from Zabbix Dashboard or do the tweaks manually.
+        
+        This trigger need to be closed manually.
+      manual_close: 'YES'
+    - uuid: 40aad2557425422191738dad5b2caa15
+      expression: 'last(/Futur-Tech App Zabbix Server/zabbix[version])<>last(/Futur-Tech App Zabbix Server/zabbix.server_version)'
+      name: 'Zabbix Server need to be restarted'
+      opdata: 'Version running: {ITEM.LASTVALUE1} Version installed: {ITEM.LASTVALUE2}'
+      url: 'https://github.com/Futur-Tech/futur-tech-zabbix-server'
+      priority: AVERAGE
+      description: 'Running version of Zabbix Server is different than installed version.'

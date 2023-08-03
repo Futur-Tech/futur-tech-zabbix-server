@@ -1,7 +1,7 @@
 # Zabbix Server Tweaking
 Zabbix Server tweaks and Zabbix server template.
 
-Works for Zabbix Server 5.x
+Works for Zabbix Server 6.0
 
 ## Deploy Commands
 
