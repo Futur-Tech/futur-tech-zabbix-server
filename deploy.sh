@@ -54,8 +54,7 @@ define_inc() {
   echo
 }
 
-# define_inc ZBX_WIDGET_ROWS 20 200
-define_inc ZBX_MAX_TABLE_COLUMNS 50 500
+define_inc ZBX_WIDGET_ROWS 20 200
 define_inc ZBX_MAX_IMAGE_SIZE "ZBX_MEBIBYTE" "ZBX_MEBIBYTE * 8"
 define_inc SVG_GRAPH_MAX_NUMBER_OF_METRICS 50 500
 diff defines.inc.php.bak defines.inc.php | $S_LOG -d $S_NAME -d "tweak" -d "defines.inc.php diff" -i
