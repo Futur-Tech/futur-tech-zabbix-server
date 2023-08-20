@@ -62,7 +62,7 @@ show_bak_diff $defines_inc_php
 class_csvggraph_js="/usr/share/zabbix/js/class.csvggraph.js"
 bak_if_exist $class_csvggraph_js
 sed -i -e 's/if (show_hint \&\& data.hintMaxRows > rows_added) {/if (show_hint \&\& data.hintMaxRows \> rows_added \&\& \!point.v.match(\/^0( \\w*)?$\/)) {/' $class_csvggraph_js
-show_bak_diff
+show_bak_diff $class_csvggraph_js
 
 echo "
   RESTART ZABBIX LATER
