@@ -2,18 +2,20 @@
 
 source "$(dirname "$0")/ft-util/ft_util_inc_func"
 source "$(dirname "$0")/ft-util/ft_util_inc_var"
+source "$(dirname "$0")/ft-util/ft_util_sudoersd"
+source "$(dirname "$0")/ft-util/ft_util_usrmgmt"
 
-APP_NAME="futur-tech-zabbix-server"
+app_name="futur-tech-zabbix-server"
 
-BIN_DIR="/usr/local/bin/${APP_NAME}"
-SRC_DIR="/usr/local/src/${APP_NAME}"
-SUDOERS_ETC="/etc/sudoers.d/${APP_NAME}"
+bin_dir="/usr/local/bin/${app_name}"
+src_dir="/usr/local/src/${app_name}"
+php_confd="/etc/php/8.2/apache2/conf.d"
 
 # Checking which Zabbix Agent is detected and adjust include directory
-$(which zabbix_agent2 >/dev/null) && ZBX_CONF_AGENT_D="/etc/zabbix/zabbix_agent2.d"
-$(which zabbix_agentd >/dev/null) && ZBX_CONF_AGENT_D="/etc/zabbix/zabbix_agentd.conf.d"
-if [ ! -d "${ZBX_CONF_AGENT_D}" ]; then
-  $S_LOG -s crit -d $S_NAME "${ZBX_CONF_AGENT_D} Zabbix Include directory not found"
+$(which zabbix_agent2 >/dev/null) && zbx_conf_agent_d="/etc/zabbix/zabbix_agent2.d"
+$(which zabbix_agentd >/dev/null) && zbx_conf_agent_d="/etc/zabbix/zabbix_agentd.conf.d"
+if [ ! -d "${zbx_conf_agent_d}" ]; then
+  $S_LOG -s crit -d $S_NAME "${zbx_conf_agent_d} Zabbix Include directory not found"
   exit 10
 fi
 
@@ -21,49 +23,46 @@ echo "
   INSTALL NEEDED PACKAGES & FILES
 ------------------------------------------"
 
-[ ! -d "${BIN_DIR}" ] && run_cmd_log mkdir "${BIN_DIR}"
-$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/bin/" "${BIN_DIR}"
-$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.zabbix/${APP_NAME}.conf" "${ZBX_CONF_AGENT_D}/${APP_NAME}.conf"
+[ ! -d "${bin_dir}" ] && run_cmd_log mkdir "${bin_dir}"
+$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/bin/" "${bin_dir}"
+enforce_security exec "$bin_dir" zabbix
 
-echo "
-  SETUP SUDOERS FILE
-------------------------------------------"
+$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.zabbix/${app_name}.conf" "${zbx_conf_agent_d}/${app_name}.conf"
 
-$S_LOG -d $S_NAME -d "$SUDOERS_ETC" "==============================="
+$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.php/00-${app_name}.ini" "${php_confd}/00-${app_name}.conf"
+run_cmd_log systemctl restart apache2
 
-echo "Defaults:zabbix !requiretty" | sudo EDITOR='tee' visudo --file=$SUDOERS_ETC &>/dev/null
-echo "zabbix ALL=(ALL) NOPASSWD:${SRC_DIR}/deploy-update.sh" | sudo EDITOR='tee -a' visudo --file=$SUDOERS_ETC &>/dev/null
-echo "zabbix ALL=(ALL) NOPASSWD:${BIN_DIR}/zabbix-server-version.sh" | sudo EDITOR='tee -a' visudo --file=$SUDOERS_ETC &>/dev/null
-
-cat $SUDOERS_ETC | $S_LOG -d "$S_NAME" -d "$SUDOERS_ETC" -i
-
-$S_LOG -d $S_NAME -d "$SUDOERS_ETC" "==============================="
+bak_if_exist "/etc/sudoers.d/${app_name}"
+sudoersd_reset_file $app_name zabbix
+sudoersd_addto_file $app_name zabbix "${S_DIR_PATH}/deploy-update.sh"
+sudoersd_addto_file $app_name zabbix "${bin_dir}/zabbix-server-version.sh"
+show_bak_diff_rm "/etc/sudoers.d/${app_name}"
 
 echo "
   APPLY TWEAKS
 ------------------------------------------"
 
-cd /usr/share/zabbix/include/
-cp defines.inc.php defines.inc.php.bak
-
 define_inc() {
   echo "===== ${1} : ${2} >> ${3} ====="
-  echo "BEFORE: $(grep ${1} defines.inc.php)"
-  sed -i -e "s/define('${1}', ${2});/define('${1}', ${3});/" defines.inc.php
-  echo "AFTER: $(grep ${1} defines.inc.php)"
+  echo "BEFORE: $(grep ${1} $defines_inc_php)"
+  sed -i -e "s/define('${1}', ${2});/define('${1}', ${3});/" $defines_inc_php
+  echo "AFTER: $(grep ${1} $defines_inc_php)"
   echo
 }
+
+defines_inc_php="/usr/share/zabbix/include/defines.inc.php"
+bak_if_exist $defines_inc_php
 
 define_inc ZBX_WIDGET_ROWS 20 200
 define_inc ZBX_MAX_IMAGE_SIZE "ZBX_MEBIBYTE" "ZBX_MEBIBYTE * 8"
 define_inc SVG_GRAPH_MAX_NUMBER_OF_METRICS 50 500
-diff defines.inc.php.bak defines.inc.php | $S_LOG -d $S_NAME -d "tweak" -d "defines.inc.php diff" -i
+show_bak_diff $defines_inc_php
 
 # Remove 0 values from GUI Graph Hintbox
-cd /usr/share/zabbix/js/
-cp class.csvggraph.js class.csvggraph.js.bak
-sed -i -e 's/if (show_hint \&\& data.hintMaxRows > rows_added) {/if (show_hint \&\& data.hintMaxRows \> rows_added \&\& \!point.v.match(\/^0( \\w*)?$\/)) {/' class.csvggraph.js
-diff class.csvggraph.js.bak class.csvggraph.js | $S_LOG -d $S_NAME -d "tweak" -d "class.csvggraph.js diff" -i
+class_csvggraph_js="/usr/share/zabbix/js/class.csvggraph.js"
+bak_if_exist $class_csvggraph_js
+sed -i -e 's/if (show_hint \&\& data.hintMaxRows > rows_added) {/if (show_hint \&\& data.hintMaxRows \> rows_added \&\& \!point.v.match(\/^0( \\w*)?$\/)) {/' $class_csvggraph_js
+show_bak_diff
 
 echo "
   RESTART ZABBIX LATER
@@ -71,7 +70,5 @@ echo "
 
 echo "systemctl restart zabbix-agent*" | at now + 1 min &>/dev/null ## restart zabbix agent with a delay
 $S_LOG -s $? -d "$S_NAME" "Scheduling Zabbix Agent Restart"
-
-$S_LOG -d "$S_NAME" "End $S_NAME"
 
 exit
