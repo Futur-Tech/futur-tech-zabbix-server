@@ -29,7 +29,7 @@ enforce_security exec "$bin_dir" zabbix
 
 $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.zabbix/${app_name}.conf" "${zbx_conf_agent_d}/${app_name}.conf"
 
-$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.php/00-${app_name}.ini" "${php_confd}/00-${app_name}.conf"
+$S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.php/00-${app_name}.ini" "${php_confd}/00-${app_name}.ini"
 run_cmd_log systemctl restart apache2
 
 bak_if_exist "/etc/sudoers.d/${app_name}"
