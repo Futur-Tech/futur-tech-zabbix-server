@@ -60,9 +60,19 @@ show_bak_diff $defines_inc_php
 
 # Remove 0 values from GUI Graph Hintbox
 class_csvggraph_js="/usr/share/zabbix/js/class.csvggraph.js"
+echo "===== ${class_csvggraph_js} patch ====="
 bak_if_exist $class_csvggraph_js
 sed -i -e 's/if (show_hint \&\& data.hintMaxRows > rows_added) {/if (show_hint \&\& data.hintMaxRows \> rows_added \&\& \!point.v.match(\/^0( \\w*)?$\/)) {/' $class_csvggraph_js
 show_bak_diff $class_csvggraph_js
+echo
+
+# Increase hardcoded 20 characters limit for LOG data in Operational Data view
+items_inc_php="/usr/share/zabbix/include/items.inc.php"
+echo "===== ${items_inc_php} patch ====="
+bak_if_exist $items_inc_php
+sed -i '/case ITEM_VALUE_TYPE_LOG:/{:a;N;/}/!ba;s/mb_strlen($value) > 20/mb_strlen($value) > 100/g;s/mb_substr($value, 0, 20)/mb_substr($value, 0, 100)/g}' $items_inc_php
+show_bak_diff $items_inc_php
+echo
 
 echo "
   RESTART ZABBIX LATER
