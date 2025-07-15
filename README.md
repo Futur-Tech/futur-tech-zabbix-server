@@ -80,3 +80,21 @@ define('SVG_GRAPH_MAX_NUMBER_OF_METRICS', 50);
 // Replaced by
 define('SVG_GRAPH_MAX_NUMBER_OF_METRICS', 500);
 ```
+
+-- 
+
+**Problem:** In problems list, the *Operational Data* is limited at 20 characters for Log datatype.
+
+**Solution:** On Zabbix Server, edit **/usr/share/zabbix/include/defines.inc.php**
+
+```php
+// Original
+case ITEM_VALUE_TYPE_LOG:
+	$display_value = $trim && mb_strlen($value) > 20 ? mb_substr($value, 0, 20).'...' : $value;
+	break;
+
+// Replaced by
+case ITEM_VALUE_TYPE_LOG:
+	$display_value = $trim && mb_strlen($value) > 100 ? mb_substr($value, 0, 100).'...' : $value;
+	break;
+```
