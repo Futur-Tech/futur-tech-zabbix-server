@@ -10,9 +10,12 @@
 # pristine on purpose: package upgrades can then replace it without ever
 # touching our tuning, and without prompting for a config conflict.
 #
+# THIS IS A TEMPLATE. deploy.sh substitutes the @@...@@ placeholders with
+# values computed from the host's RAM and free disk space, then deploys the
+# result. Everything else is copied verbatim.
+#
 # Baseline: the tuning previously held inline in 50-server.cnf (2025-09-06),
-# written for MariaDB 10.6. Values are unchanged except where noted below.
-# Sized for a dedicated Zabbix DB host: ~39 GB RAM, NVMe, write-heavy.
+# written for MariaDB 10.6. Tuned for a Zabbix DB host on NVMe, write-heavy.
 ###############################################################################
 
 [mysqld]
@@ -21,7 +24,7 @@
 # datadir is deliberately set here rather than left to the package default.
 # The Debian package file ships it commented out, so without this the server
 # silently falls back to /var/lib/mysql and tries to create an empty database.
-datadir                       = /srv/mysql
+datadir                       = @@DATADIR@@
 tmpdir                        = /tmp
 socket                        = /run/mysqld/mysqld.sock
 
@@ -32,16 +35,23 @@ socket                        = /run/mysqld/mysqld.sock
 character-set-server          = utf8mb4
 collation-server              = utf8mb4_general_ci
 
-### MEMORY (~75% RAM for dedicated DB)
-innodb_buffer_pool_size       = 24G        # Zabbix = write-heavy; keep OS/file cache headroom
+### MEMORY
+# Computed by deploy.sh as a percentage of MemTotal (see innodb_bufpool_pct).
+# Deliberately below the 75-80% usual for a dedicated database machine, because
+# zabbix-server, Apache and PHP share this host and need their own headroom.
+innodb_buffer_pool_size       = @@BUFFER_POOL_SIZE@@
 
 ### REDO LOG
 # CHANGED 2026-08-25: was `innodb_log_file_size = 3G` + `innodb_log_files_in_group = 4`,
 # intending ~12G of total redo. innodb_log_files_in_group was REMOVED in MariaDB
 # 10.5 and has been silently ignored ever since, so the server was actually
 # running on 3G of redo - a quarter of the intended capacity, forcing far more
-# frequent checkpoint flushing. 12G here restores the original intent.
-innodb_log_file_size          = 12G
+# frequent checkpoint flushing.
+#
+# Computed by deploy.sh as half the buffer pool, then capped at a quarter of the
+# space actually free on datadir. That cap matters: InnoDB aborts startup with
+# error 28 if it cannot preallocate the redo file, taking the server down.
+innodb_log_file_size          = @@LOG_FILE_SIZE@@
 innodb_log_buffer_size        = 256M
 
 ### FLUSHING / DURABILITY (NVMe)

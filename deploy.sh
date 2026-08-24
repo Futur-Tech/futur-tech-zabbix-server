@@ -14,6 +14,12 @@ src_dir="/usr/local/src/${app_name}"
 php_confd="$(ls -1d /etc/php/*/apache2/conf.d 2>/dev/null | sort -V | tail -n1)"
 mysql_confd="/etc/mysql/mariadb.conf.d"
 systemd_mariadb_d="/etc/systemd/system/mariadb.service.d"
+mysql_datadir="/srv/mysql"
+
+# Percentage of total RAM handed to the InnoDB buffer pool. Kept below the
+# 75-80% usual for a dedicated database machine because zabbix-server, Apache
+# and PHP share this host.
+innodb_bufpool_pct=60
 
 # Checking which Zabbix Agent is detected and adjust include directory
 $(which zabbix_agent2 >/dev/null) && zbx_conf_agent_d="/etc/zabbix/zabbix_agent2.d"
@@ -50,6 +56,38 @@ show_bak_diff_rm "/etc/sudoers.d/${app_name}"
 echo "
   MARIADB TUNING
 ------------------------------------------"
+
+# Render the MariaDB tuning template, sizing the memory-dependent values from
+# this host's RAM and free disk space so the same repo file suits any server.
+render_mysql_cnf() {
+  local tpl="${1}" out="${2}"
+  local mem_mb bufpool_mb redo_mb avail_mb redo_cap_mb df_target
+
+  mem_mb=$(($(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024))
+  bufpool_mb=$((mem_mb * innodb_bufpool_pct / 100))
+  [ "${bufpool_mb}" -lt 1024 ] && bufpool_mb=1024
+
+  # Redo log at half the buffer pool, but never more than a quarter of the space
+  # free on datadir: InnoDB aborts startup with error 28 if it cannot
+  # preallocate the file, which takes the whole server down.
+  redo_mb=$((bufpool_mb / 2))
+  df_target="${mysql_datadir}"
+  [ -d "${df_target}" ] || df_target="/"
+  avail_mb=$(($(df -Pk "${df_target}" | awk 'NR==2 {print $4}') / 1024))
+  redo_cap_mb=$((avail_mb / 4))
+  if [ "${redo_mb}" -gt "${redo_cap_mb}" ]; then
+    $S_LOG -s warn -d "$S_NAME" "Redo log capped at ${redo_cap_mb}M by free space on ${df_target} (wanted ${redo_mb}M)"
+    redo_mb=${redo_cap_mb}
+  fi
+  [ "${redo_mb}" -lt 512 ] && redo_mb=512
+
+  sed -e "s|@@DATADIR@@|${mysql_datadir}|g" \
+    -e "s|@@BUFFER_POOL_SIZE@@|${bufpool_mb}M|g" \
+    -e "s|@@LOG_FILE_SIZE@@|${redo_mb}M|g" \
+    "${tpl}" >"${out}"
+
+  $S_LOG -s info -d "$S_NAME" "MariaDB sizing: RAM=${mem_mb}M bufpool=${bufpool_mb}M (${innodb_bufpool_pct}%) redo=${redo_mb}M free=${avail_mb}M on ${df_target}"
+}
 
 # Normalise a value so a my.cnf entry can be compared with SHOW GLOBAL VARIABLES
 # (size suffixes -> bytes, boolean forms -> ON/OFF)
@@ -119,7 +157,10 @@ if [ -d "${mysql_confd}" ]; then
   $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.systemd/zz-${app_name}.conf" "${systemd_mariadb_d}/zz-${app_name}.conf"
   run_cmd_log systemctl daemon-reload
 
-  $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.mysql/99-${app_name}.cnf" "${mysql_confd}/99-${app_name}.cnf"
+  rendered_cnf="$(mktemp -t "99-${app_name}.cnf.XXXXXX")"
+  render_mysql_cnf "$S_DIR/etc.mysql/99-${app_name}.cnf.tpl" "${rendered_cnf}"
+  $S_DIR/ft-util/ft_util_file-deploy "${rendered_cnf}" "${mysql_confd}/99-${app_name}.cnf"
+  rm -f "${rendered_cnf}"
   show_mysql_conf_status "${mysql_confd}/99-${app_name}.cnf"
 else
   $S_LOG -s warn -d $S_NAME "${mysql_confd} not found - skipping MariaDB tuning deploy"
