@@ -10,7 +10,7 @@
 # pristine on purpose: package upgrades can then replace it without ever
 # touching our tuning, and without prompting for a config conflict.
 #
-# THIS IS A TEMPLATE. deploy.sh substitutes the @@...@@ placeholders with
+# THIS IS A TEMPLATE. deploy.sh substitutes the placeholders below with
 # values computed from the host's RAM and free disk space, then deploys the
 # result. Everything else is copied verbatim.
 #

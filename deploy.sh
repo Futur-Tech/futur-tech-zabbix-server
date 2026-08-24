@@ -57,10 +57,11 @@ echo "
   MARIADB TUNING
 ------------------------------------------"
 
-# Render the MariaDB tuning template, sizing the memory-dependent values from
-# this host's RAM and free disk space so the same repo file suits any server.
+# Render the deployed MariaDB tuning template in place, sizing the
+# memory-dependent values from this host's RAM and free disk space so the same
+# repo file suits any server.
 render_mysql_cnf() {
-  local tpl="${1}" out="${2}"
+  local cnf="${1}"
   local mem_mb bufpool_mb redo_mb avail_mb redo_cap_mb df_target
 
   mem_mb=$(($(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024))
@@ -81,10 +82,16 @@ render_mysql_cnf() {
   fi
   [ "${redo_mb}" -lt 512 ] && redo_mb=512
 
-  sed -e "s|@@DATADIR@@|${mysql_datadir}|g" \
+  sed -i -e "s|@@DATADIR@@|${mysql_datadir}|g" \
     -e "s|@@BUFFER_POOL_SIZE@@|${bufpool_mb}M|g" \
     -e "s|@@LOG_FILE_SIZE@@|${redo_mb}M|g" \
-    "${tpl}" >"${out}"
+    "${cnf}"
+
+  # A surviving placeholder means the template gained one deploy.sh does not
+  # know about; MariaDB would refuse to start on it.
+  if grep -q '@@' "${cnf}"; then
+    $S_LOG -s err -d "$S_NAME" "Unsubstituted placeholder left in ${cnf}: $(grep -o '@@[A-Z_]*@@' "${cnf}" | sort -u | tr '\n' ' ')"
+  fi
 
   $S_LOG -s info -d "$S_NAME" "MariaDB sizing: RAM=${mem_mb}M bufpool=${bufpool_mb}M (${innodb_bufpool_pct}%) redo=${redo_mb}M free=${avail_mb}M on ${df_target}"
 }
@@ -157,11 +164,16 @@ if [ -d "${mysql_confd}" ]; then
   $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.systemd/zz-${app_name}.conf" "${systemd_mariadb_d}/zz-${app_name}.conf"
   run_cmd_log systemctl daemon-reload
 
-  rendered_cnf="$(mktemp -t "99-${app_name}.cnf.XXXXXX")"
-  render_mysql_cnf "$S_DIR/etc.mysql/99-${app_name}.cnf.tpl" "${rendered_cnf}"
-  $S_DIR/ft-util/ft_util_file-deploy "${rendered_cnf}" "${mysql_confd}/99-${app_name}.cnf"
-  rm -f "${rendered_cnf}"
-  show_mysql_conf_status "${mysql_confd}/99-${app_name}.cnf"
+  # NO-COMPARE: file-deploy would diff the live config against the raw template,
+  # which is noise. Take our own backup and diff it after rendering instead, so
+  # the deploy shows the real before/after of the values that changed.
+  mysql_cnf="${mysql_confd}/99-${app_name}.cnf"
+  bak_if_exist "${mysql_cnf}"
+  $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.mysql/99-${app_name}.cnf.tpl" "${mysql_cnf}" "NO-COMPARE"
+  render_mysql_cnf "${mysql_cnf}"
+  show_bak_diff_rm "${mysql_cnf}"
+
+  show_mysql_conf_status "${mysql_cnf}"
 else
   $S_LOG -s warn -d $S_NAME "${mysql_confd} not found - skipping MariaDB tuning deploy"
 fi
