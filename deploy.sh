@@ -13,6 +13,7 @@ src_dir="/usr/local/src/${app_name}"
 # (Bookworm ships PHP 8.2, Trixie ships 8.4)
 php_confd="$(ls -1d /etc/php/*/apache2/conf.d 2>/dev/null | sort -V | tail -n1)"
 mysql_confd="/etc/mysql/mariadb.conf.d"
+systemd_mariadb_d="/etc/systemd/system/mariadb.service.d"
 
 # Checking which Zabbix Agent is detected and adjust include directory
 $(which zabbix_agent2 >/dev/null) && zbx_conf_agent_d="/etc/zabbix/zabbix_agent2.d"
@@ -81,8 +82,8 @@ show_mysql_conf_status() {
     return 0
   fi
 
-  printf "%-32s %-16s %-16s %s\n" "VARIABLE" "CONF FILE" "RUNNING" "STATUS"
-  printf "%-32s %-16s %-16s %s\n" "--------------------------------" "----------------" "----------------" "------"
+  printf "%-32s %-26s %-26s %s\n" "VARIABLE" "CONF FILE" "RUNNING" "STATUS"
+  printf "%-32s %-26s %-26s %s\n" "--------------------------------" "--------------------------" "--------------------------" "------"
 
   while IFS=$'\t' read -r var val_conf; do
     var="${var//-/_}"
@@ -100,7 +101,7 @@ show_mysql_conf_status() {
         diff_count=$((diff_count + 1))
       fi
     fi
-    printf "%-32s %-16s %-16s %s\n" "${var}" "${val_conf}" "${val_run:--}" "${status}"
+    printf "%-32s %-26s %-26s %s\n" "${var}" "${val_conf}" "${val_run:--}" "${status}"
   done < <(awk -F= '/^[[:space:]]*[a-zA-Z_]/ && /=/ {
              n=$1; sub(/^[[:space:]]+/,"",n); sub(/[[:space:]]+$/,"",n);
              v=$2; sub(/#.*/,"",v); sub(/^[[:space:]]+/,"",v); sub(/[[:space:]]+$/,"",v);
@@ -112,6 +113,12 @@ show_mysql_conf_status() {
 }
 
 if [ -d "${mysql_confd}" ]; then
+
+  # systemd caps the unit's file descriptors; open_files_limit cannot exceed it
+  mkdir_if_missing "${systemd_mariadb_d}"
+  $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.systemd/zz-${app_name}.conf" "${systemd_mariadb_d}/zz-${app_name}.conf"
+  run_cmd_log systemctl daemon-reload
+
   $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.mysql/99-${app_name}.cnf" "${mysql_confd}/99-${app_name}.cnf"
   show_mysql_conf_status "${mysql_confd}/99-${app_name}.cnf"
 else
