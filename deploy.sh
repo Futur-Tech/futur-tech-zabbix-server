@@ -90,7 +90,7 @@ render_mysql_cnf() {
   # A surviving placeholder means the template gained one deploy.sh does not
   # know about; MariaDB would refuse to start on it.
   if grep -q '@@' "${cnf}"; then
-    $S_LOG -s err -d "$S_NAME" "Unsubstituted placeholder left in ${cnf}: $(grep -o '@@[A-Z_]*@@' "${cnf}" | sort -u | tr '\n' ' ')"
+    $S_LOG -s crit -d "$S_NAME" "Unsubstituted placeholder left in ${cnf}: $(grep -o '@@[A-Z_]*@@' "${cnf}" | sort -u | tr '\n' ' ')"
   fi
 
   $S_LOG -s info -d "$S_NAME" "MariaDB sizing: RAM=${mem_mb}M bufpool=${bufpool_mb}M (${innodb_bufpool_pct}%) redo=${redo_mb}M free=${avail_mb}M on ${df_target}"
