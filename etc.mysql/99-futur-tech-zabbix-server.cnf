@@ -17,6 +17,14 @@
 
 [mysqld]
 
+### PATHS
+# datadir is deliberately set here rather than left to the package default.
+# The Debian package file ships it commented out, so without this the server
+# silently falls back to /var/lib/mysql and tries to create an empty database.
+datadir                       = /srv/mysql
+tmpdir                        = /tmp
+socket                        = /run/mysqld/mysqld.sock
+
 ### CHARACTER SET
 # Kept explicitly: the Debian 11.8 package file dropped these, and MariaDB
 # 11.4+ changed the default utf8mb4 collation to utf8mb4_uca1400_ai_ci.

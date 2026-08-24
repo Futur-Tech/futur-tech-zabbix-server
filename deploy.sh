@@ -53,14 +53,15 @@ echo "
 # Normalise a value so a my.cnf entry can be compared with SHOW GLOBAL VARIABLES
 # (size suffixes -> bytes, boolean forms -> ON/OFF)
 norm_val() {
-  local u="${1^^}"
+  local v="${1%/}" # strip trailing slash so path values compare cleanly
+  local u="${v^^}"
   case "$u" in
   *[0-9]K) echo $((${u%K} * 1024)) ;;
   *[0-9]M) echo $((${u%M} * 1024 * 1024)) ;;
   *[0-9]G) echo $((${u%G} * 1024 * 1024 * 1024)) ;;
   1 | ON | TRUE) echo "ON" ;;
   0 | OFF | FALSE) echo "OFF" ;;
-  *) echo "$u" ;;
+  *) echo "$v" ;; # keep original case: paths are case-sensitive
   esac
 }
 
