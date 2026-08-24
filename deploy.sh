@@ -9,7 +9,10 @@ app_name="futur-tech-zabbix-server"
 
 bin_dir="/usr/local/bin/${app_name}"
 src_dir="/usr/local/src/${app_name}"
-php_confd="/etc/php/8.2/apache2/conf.d"
+# Detect the PHP version in use instead of hardcoding it
+# (Bookworm ships PHP 8.2, Trixie ships 8.4)
+php_confd="$(ls -1d /etc/php/*/apache2/conf.d 2>/dev/null | sort -V | tail -n1)"
+mysql_confd="/etc/mysql/mariadb.conf.d"
 
 # Checking which Zabbix Agent is detected and adjust include directory
 $(which zabbix_agent2 >/dev/null) && zbx_conf_agent_d="/etc/zabbix/zabbix_agent2.d"
@@ -17,6 +20,11 @@ $(which zabbix_agentd >/dev/null) && zbx_conf_agent_d="/etc/zabbix/zabbix_agentd
 if [ ! -d "${zbx_conf_agent_d}" ]; then
   $S_LOG -s crit -d $S_NAME "${zbx_conf_agent_d} Zabbix Include directory not found"
   exit 10
+fi
+
+if [ ! -d "${php_confd}" ]; then
+  $S_LOG -s crit -d $S_NAME "No /etc/php/*/apache2/conf.d directory found"
+  exit 11
 fi
 
 echo "
@@ -37,6 +45,77 @@ sudoersd_reset_file $app_name zabbix
 sudoersd_addto_file $app_name zabbix "${S_DIR_PATH}/deploy-update.sh"
 sudoersd_addto_file $app_name zabbix "${bin_dir}/zabbix-server-version.sh"
 show_bak_diff_rm "/etc/sudoers.d/${app_name}"
+
+echo "
+  MARIADB TUNING
+------------------------------------------"
+
+# Normalise a value so a my.cnf entry can be compared with SHOW GLOBAL VARIABLES
+# (size suffixes -> bytes, boolean forms -> ON/OFF)
+norm_val() {
+  local u="${1^^}"
+  case "$u" in
+  *[0-9]K) echo $((${u%K} * 1024)) ;;
+  *[0-9]M) echo $((${u%M} * 1024 * 1024)) ;;
+  *[0-9]G) echo $((${u%G} * 1024 * 1024 * 1024)) ;;
+  1 | ON | TRUE) echo "ON" ;;
+  0 | OFF | FALSE) echo "OFF" ;;
+  *) echo "$u" ;;
+  esac
+}
+
+# Show, for every variable our tuning file sets, the value in the file next to
+# the value the running server actually has. Catches settings that a MariaDB
+# upgrade has removed or that need a restart to take effect.
+show_mysql_conf_status() {
+  local cnf="${1}"
+  local var val_conf val_run n_conf n_run status diff_count=0 gone_count=0
+
+  if ! command -v mariadb >/dev/null 2>&1; then
+    $S_LOG -s warn -d "$S_NAME" "mariadb client not found - skipping config comparison"
+    return 0
+  fi
+  if ! mariadb -N -B -e "SELECT 1" >/dev/null 2>&1; then
+    $S_LOG -s warn -d "$S_NAME" "Cannot connect to MariaDB via socket - skipping config comparison"
+    return 0
+  fi
+
+  printf "%-32s %-16s %-16s %s\n" "VARIABLE" "CONF FILE" "RUNNING" "STATUS"
+  printf "%-32s %-16s %-16s %s\n" "--------------------------------" "----------------" "----------------" "------"
+
+  while IFS=$'\t' read -r var val_conf; do
+    var="${var//-/_}"
+    val_run="$(mariadb -N -B -e "SHOW GLOBAL VARIABLES LIKE '${var}'" 2>/dev/null | cut -f2)"
+    if [ -z "${val_run}" ]; then
+      status="REMOVED - no such variable in this MariaDB version"
+      gone_count=$((gone_count + 1))
+    else
+      n_conf="$(norm_val "${val_conf}")"
+      n_run="$(norm_val "${val_run}")"
+      if [ "${n_conf}" = "${n_run}" ]; then
+        status="ok"
+      else
+        status="DIFFERS - restart MariaDB to apply"
+        diff_count=$((diff_count + 1))
+      fi
+    fi
+    printf "%-32s %-16s %-16s %s\n" "${var}" "${val_conf}" "${val_run:--}" "${status}"
+  done < <(awk -F= '/^[[:space:]]*[a-zA-Z_]/ && /=/ {
+             n=$1; sub(/^[[:space:]]+/,"",n); sub(/[[:space:]]+$/,"",n);
+             v=$2; sub(/#.*/,"",v); sub(/^[[:space:]]+/,"",v); sub(/[[:space:]]+$/,"",v);
+             print n "\t" v }' "${cnf}")
+
+  echo
+  $S_LOG -s $([ "${gone_count}" -eq 0 ] && echo info || echo warn) -d "$S_NAME" \
+    "MariaDB tuning: ${gone_count} removed variable(s), ${diff_count} value(s) awaiting restart"
+}
+
+if [ -d "${mysql_confd}" ]; then
+  $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.mysql/99-${app_name}.cnf" "${mysql_confd}/99-${app_name}.cnf"
+  show_mysql_conf_status "${mysql_confd}/99-${app_name}.cnf"
+else
+  $S_LOG -s warn -d $S_NAME "${mysql_confd} not found - skipping MariaDB tuning deploy"
+fi
 
 echo "
   APPLY TWEAKS
