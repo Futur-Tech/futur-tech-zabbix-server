@@ -9,7 +9,17 @@ app_name="futur-tech-zabbix-server"
 
 bin_dir="/usr/local/bin/${app_name}"
 src_dir="/usr/local/src/${app_name}"
-php_confd="/etc/php/8.2/apache2/conf.d"
+# Detect the PHP version in use instead of hardcoding it
+# (Bookworm ships PHP 8.2, Trixie ships 8.4)
+php_confd="$(ls -1d /etc/php/*/apache2/conf.d 2>/dev/null | sort -V | tail -n1)"
+mysql_confd="/etc/mysql/mariadb.conf.d"
+systemd_mariadb_d="/etc/systemd/system/mariadb.service.d"
+mysql_datadir="/srv/mysql"
+
+# Percentage of total RAM handed to the InnoDB buffer pool. Kept below the
+# 75-80% usual for a dedicated database machine because zabbix-server, Apache
+# and PHP share this host.
+innodb_bufpool_pct=60
 
 # Checking which Zabbix Agent is detected and adjust include directory
 $(which zabbix_agent2 >/dev/null) && zbx_conf_agent_d="/etc/zabbix/zabbix_agent2.d"
@@ -17,6 +27,11 @@ $(which zabbix_agentd >/dev/null) && zbx_conf_agent_d="/etc/zabbix/zabbix_agentd
 if [ ! -d "${zbx_conf_agent_d}" ]; then
   $S_LOG -s crit -d $S_NAME "${zbx_conf_agent_d} Zabbix Include directory not found"
   exit 10
+fi
+
+if [ ! -d "${php_confd}" ]; then
+  $S_LOG -s crit -d $S_NAME "No /etc/php/*/apache2/conf.d directory found"
+  exit 11
 fi
 
 echo "
@@ -37,6 +52,131 @@ sudoersd_reset_file $app_name zabbix
 sudoersd_addto_file $app_name zabbix "${S_DIR_PATH}/deploy-update.sh"
 sudoersd_addto_file $app_name zabbix "${bin_dir}/zabbix-server-version.sh"
 show_bak_diff_rm "/etc/sudoers.d/${app_name}"
+
+echo "
+  MARIADB TUNING
+------------------------------------------"
+
+# Render the deployed MariaDB tuning template in place, sizing the
+# memory-dependent values from this host's RAM and free disk space so the same
+# repo file suits any server.
+render_mysql_cnf() {
+  local cnf="${1}"
+  local mem_mb bufpool_mb redo_mb avail_mb redo_cap_mb df_target
+
+  mem_mb=$(($(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024))
+  bufpool_mb=$((mem_mb * innodb_bufpool_pct / 100))
+  [ "${bufpool_mb}" -lt 1024 ] && bufpool_mb=1024
+
+  # Redo log at half the buffer pool, but never more than a quarter of the space
+  # free on datadir: InnoDB aborts startup with error 28 if it cannot
+  # preallocate the file, which takes the whole server down.
+  redo_mb=$((bufpool_mb / 2))
+  df_target="${mysql_datadir}"
+  [ -d "${df_target}" ] || df_target="/"
+  avail_mb=$(($(df -Pk "${df_target}" | awk 'NR==2 {print $4}') / 1024))
+  redo_cap_mb=$((avail_mb / 4))
+  if [ "${redo_mb}" -gt "${redo_cap_mb}" ]; then
+    $S_LOG -s warn -d "$S_NAME" "Redo log capped at ${redo_cap_mb}M by free space on ${df_target} (wanted ${redo_mb}M)"
+    redo_mb=${redo_cap_mb}
+  fi
+  [ "${redo_mb}" -lt 512 ] && redo_mb=512
+
+  sed -i -e "s|@@DATADIR@@|${mysql_datadir}|g" \
+    -e "s|@@BUFFER_POOL_SIZE@@|${bufpool_mb}M|g" \
+    -e "s|@@LOG_FILE_SIZE@@|${redo_mb}M|g" \
+    "${cnf}"
+
+  # A surviving placeholder means the template gained one deploy.sh does not
+  # know about; MariaDB would refuse to start on it.
+  if grep -q '@@' "${cnf}"; then
+    $S_LOG -s crit -d "$S_NAME" "Unsubstituted placeholder left in ${cnf}: $(grep -o '@@[A-Z_]*@@' "${cnf}" | sort -u | tr '\n' ' ')"
+  fi
+
+  $S_LOG -s info -d "$S_NAME" "MariaDB sizing: RAM=${mem_mb}M bufpool=${bufpool_mb}M (${innodb_bufpool_pct}%) redo=${redo_mb}M free=${avail_mb}M on ${df_target}"
+}
+
+# Normalise a value so a my.cnf entry can be compared with SHOW GLOBAL VARIABLES
+# (size suffixes -> bytes, boolean forms -> ON/OFF)
+norm_val() {
+  local v="${1%/}" # strip trailing slash so path values compare cleanly
+  local u="${v^^}"
+  case "$u" in
+  *[0-9]K) echo $((${u%K} * 1024)) ;;
+  *[0-9]M) echo $((${u%M} * 1024 * 1024)) ;;
+  *[0-9]G) echo $((${u%G} * 1024 * 1024 * 1024)) ;;
+  1 | ON | TRUE) echo "ON" ;;
+  0 | OFF | FALSE) echo "OFF" ;;
+  *) echo "$v" ;; # keep original case: paths are case-sensitive
+  esac
+}
+
+# Show, for every variable our tuning file sets, the value in the file next to
+# the value the running server actually has. Catches settings that a MariaDB
+# upgrade has removed or that need a restart to take effect.
+show_mysql_conf_status() {
+  local cnf="${1}"
+  local var val_conf val_run n_conf n_run status diff_count=0 gone_count=0
+
+  if ! command -v mariadb >/dev/null 2>&1; then
+    $S_LOG -s warn -d "$S_NAME" "mariadb client not found - skipping config comparison"
+    return 0
+  fi
+  if ! mariadb -N -B -e "SELECT 1" >/dev/null 2>&1; then
+    $S_LOG -s warn -d "$S_NAME" "Cannot connect to MariaDB via socket - skipping config comparison"
+    return 0
+  fi
+
+  printf "%-32s %-26s %-26s %s\n" "VARIABLE" "CONF FILE" "RUNNING" "STATUS"
+  printf "%-32s %-26s %-26s %s\n" "--------------------------------" "--------------------------" "--------------------------" "------"
+
+  while IFS=$'\t' read -r var val_conf; do
+    var="${var//-/_}"
+    val_run="$(mariadb -N -B -e "SHOW GLOBAL VARIABLES LIKE '${var}'" 2>/dev/null | cut -f2)"
+    if [ -z "${val_run}" ]; then
+      status="REMOVED - no such variable in this MariaDB version"
+      gone_count=$((gone_count + 1))
+    else
+      n_conf="$(norm_val "${val_conf}")"
+      n_run="$(norm_val "${val_run}")"
+      if [ "${n_conf}" = "${n_run}" ]; then
+        status="ok"
+      else
+        status="DIFFERS - restart MariaDB to apply"
+        diff_count=$((diff_count + 1))
+      fi
+    fi
+    printf "%-32s %-26s %-26s %s\n" "${var}" "${val_conf}" "${val_run:--}" "${status}"
+  done < <(awk -F= '/^[[:space:]]*[a-zA-Z_]/ && /=/ {
+             n=$1; sub(/^[[:space:]]+/,"",n); sub(/[[:space:]]+$/,"",n);
+             v=$2; sub(/#.*/,"",v); sub(/^[[:space:]]+/,"",v); sub(/[[:space:]]+$/,"",v);
+             print n "\t" v }' "${cnf}")
+
+  echo
+  $S_LOG -s $([ "${gone_count}" -eq 0 ] && echo info || echo warn) -d "$S_NAME" \
+    "MariaDB tuning: ${gone_count} removed variable(s), ${diff_count} value(s) awaiting restart"
+}
+
+if [ -d "${mysql_confd}" ]; then
+
+  # systemd caps the unit's file descriptors; open_files_limit cannot exceed it
+  mkdir_if_missing "${systemd_mariadb_d}"
+  $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.systemd/zz-${app_name}.conf" "${systemd_mariadb_d}/zz-${app_name}.conf"
+  run_cmd_log systemctl daemon-reload
+
+  # NO-COMPARE: file-deploy would diff the live config against the raw template,
+  # which is noise. Take our own backup and diff it after rendering instead, so
+  # the deploy shows the real before/after of the values that changed.
+  mysql_cnf="${mysql_confd}/99-${app_name}.cnf"
+  bak_if_exist "${mysql_cnf}"
+  $S_DIR/ft-util/ft_util_file-deploy "$S_DIR/etc.mysql/99-${app_name}.cnf.tpl" "${mysql_cnf}" "NO-COMPARE"
+  render_mysql_cnf "${mysql_cnf}"
+  show_bak_diff_rm "${mysql_cnf}"
+
+  show_mysql_conf_status "${mysql_cnf}"
+else
+  $S_LOG -s warn -d $S_NAME "${mysql_confd} not found - skipping MariaDB tuning deploy"
+fi
 
 echo "
   APPLY TWEAKS
